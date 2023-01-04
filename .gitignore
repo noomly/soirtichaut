@@ -1,0 +1,14 @@
+dist/
+node_modules/
+certificates/
+
+.smartweave-cache/
+smartweave-cache/
+smartweave-cache.sqlite
+
+assets
+
+yarn-error.log
+
+.env*
+*ignoreme*
