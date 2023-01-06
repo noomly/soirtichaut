@@ -22,13 +22,36 @@ const OPS_IDS = [0];
 
     console.log("done!");
 
-    type ChatlogEntry = { username: string; msg: string; msgId: number; repliesTo?: number };
+    type ChatlogEntry = {
+        firstName: string;
+        username?: string;
+        userId: number;
+        msg: string;
+        msgId: number;
+        repliesTo?: number;
+    };
 
     const chatlogs: Map<number, ChatlogEntry[]> = new Map();
 
+    function msgToLogEntry(msg: Tg.Message): ChatlogEntry {
+        const { from } = msg;
+        if (!from) {
+            throw new Error("no from");
+        }
+
+        return {
+            firstName: from.first_name,
+            username: from.username,
+            userId: from.id,
+            msg: msg.text ?? "",
+            msgId: msg.message_id,
+            repliesTo: msg.reply_to_message?.message_id,
+        };
+    }
+
     function logEntryToStr(entry: ChatlogEntry) {
         const repliesTo = entry.repliesTo ? `,${entry.repliesTo}` : "";
-        return `${entry.username}: ${entry.msgId}${repliesTo}: ${entry.msg}~~~`;
+        return `${entry.firstName}: ${entry.msgId}${repliesTo}: ${entry.msg}~~~`;
     }
 
     function getPrompt(
@@ -82,6 +105,7 @@ soirtichautbot: ${lastMsgId + 1},${lastMsgId}:`;
             prompt,
             max_tokens: 1000,
             suffix: "~~~",
+            user: chatlog[chatlog.length - 1].userId.toString(),
         };
     }
 
@@ -118,21 +142,12 @@ soirtichautbot: ${lastMsgId + 1},${lastMsgId}:`;
         if (shouldAnswer && msg.from?.id && msg.text) {
             const chatlog = chatlogs.get(roomId) || [];
 
-            chatlog.push({
-                username: msg.from.first_name,
-                msgId: msg.message_id,
-                msg: msg.text,
-                repliesTo: msg.reply_to_message?.message_id,
-            });
+            chatlog.push(msgToLogEntry(msg));
 
             let includeHistory: ChatlogEntry | undefined;
 
             if (msg.reply_to_message?.text && msg.reply_to_message?.from) {
-                includeHistory = {
-                    username: msg.reply_to_message.from.first_name,
-                    msg: msg.reply_to_message.text,
-                    msgId: msg.reply_to_message.message_id,
-                };
+                includeHistory = msgToLogEntry(msg.reply_to_message);
             }
 
             console.log("generating response...");
@@ -153,7 +168,9 @@ soirtichautbot: ${lastMsgId + 1},${lastMsgId}:`;
                 const response = apiResponse.data.choices[0].text.trim();
 
                 chatlog.push({
-                    username: botInfo.username || "soirtichautbot",
+                    firstName: botInfo.first_name || "soirtichautbot",
+                    username: botInfo.username,
+                    userId: botInfo.id,
                     msg: response,
                     msgId: chatlog[chatlog.length - 1].msgId + 1,
                     repliesTo: msg.message_id,
