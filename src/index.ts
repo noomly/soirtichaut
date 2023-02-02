@@ -5,12 +5,13 @@ import {
     CreateCompletionResponseUsage,
 } from "openai";
 import Tg from "node-telegram-bot-api";
+
 import { sleep } from "@/utils";
 
 const OPENAI_TOKEN = "";
 const BOT_TOKEN = "";
-const ROOM_ID = 0;
-const OPS_IDS = [0];
+const ROOMS_IDS: number[] = [];
+const OPS_IDS: number[] = [];
 
 (async () => {
     console.log("logging in openai...");
@@ -121,16 +122,23 @@ soirtichautbot: ${lastMsgId + 1},${lastMsgId}:`;
 
     async function handleMsg(msg: Tg.Message) {
         const roomId = msg.chat.id;
+        const chatlog = chatlogs.get(roomId) || [];
 
         const isOp = msg.from?.id && OPS_IDS.includes(msg.from.id);
 
-        const isAuthorized = isOp || roomId === ROOM_ID;
+        const isAuthorized = isOp || ROOMS_IDS.includes(roomId);
+
+        if (isAuthorized) {
+            chatlog.push(msgToLogEntry(msg));
+        }
 
         const shouldAnswer =
             OPS_IDS.includes(roomId) ||
             (isAuthorized &&
                 (msg.reply_to_message?.from?.id === botInfo.id ||
                     (botInfo.username && msg.text?.includes(botInfo.username))));
+
+        const isComplete = isOp && msg.text?.startsWith("???");
 
         console.log(
             "received:",
@@ -140,10 +148,6 @@ soirtichautbot: ${lastMsgId + 1},${lastMsgId}:`;
         );
 
         if (shouldAnswer && msg.from?.id && msg.text) {
-            const chatlog = chatlogs.get(roomId) || [];
-
-            chatlog.push(msgToLogEntry(msg));
-
             let includeHistory: ChatlogEntry | undefined;
 
             if (msg.reply_to_message?.text && msg.reply_to_message?.from) {
@@ -155,9 +159,20 @@ soirtichautbot: ${lastMsgId + 1},${lastMsgId}:`;
             try {
                 await tg.sendChatAction(roomId, "typing");
 
-                const apiResponse = await openaiApi.createCompletion(
-                    getPrompt(chatlog, includeHistory),
-                );
+                let apiResponse;
+
+                if (isComplete) {
+                    const splitted = msg.text?.split("#####", 2)[1];
+                    apiResponse = await openaiApi.createEdit({
+                        model: "text-davinci-edit-001",
+                        instruction: splitted[0].slice(3),
+                        input: splitted[1],
+                    });
+                } else {
+                    apiResponse = await openaiApi.createCompletion(
+                        getPrompt(chatlog, includeHistory),
+                    );
+                }
 
                 console.log("[DEBUG]", JSON.stringify(apiResponse.data.choices, null, 2));
 
